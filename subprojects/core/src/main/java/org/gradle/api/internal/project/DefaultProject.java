@@ -48,6 +48,7 @@ import org.gradle.api.file.ProjectLayout;
 import org.gradle.api.file.SyncSpec;
 import org.gradle.api.internal.CollectionCallbackActionDecorator;
 import org.gradle.api.internal.DynamicObjectAware;
+import org.gradle.api.internal.FeaturePreviews;
 import org.gradle.api.internal.GradleInternal;
 import org.gradle.api.internal.ProcessOperations;
 import org.gradle.api.internal.artifacts.DependencyManagementServices;
@@ -91,7 +92,7 @@ import org.gradle.internal.Actions;
 import org.gradle.internal.Cast;
 import org.gradle.internal.Factories;
 import org.gradle.internal.Factory;
-import org.gradle.api.internal.FeaturePreviews;
+import org.gradle.internal.build.BuildState;
 import org.gradle.internal.buildoption.FeatureFlags;
 import org.gradle.internal.buildoption.InternalOption;
 import org.gradle.internal.buildoption.InternalOptions;
@@ -185,20 +186,9 @@ public abstract class DefaultProject extends AbstractPluginAware implements Proj
     private final ClassLoaderScope baseClassLoaderScope;
     private final ServiceRegistry services;
 
-    private final ProjectInternal rootProject;
-
-    private final GradleInternal gradle;
-
     private final ScriptSource buildScriptSource;
 
-    private final File projectDir;
-
     private final File buildFile;
-
-    @Nullable
-    private final ProjectInternal parent;
-
-    private final String name;
 
     @Nullable
     private Object group;
@@ -236,12 +226,8 @@ public abstract class DefaultProject extends AbstractPluginAware implements Proj
     private Object beforeProjectActionState;
 
     public DefaultProject(
-        String name,
-        @Nullable ProjectInternal parent,
-        File projectDir,
         File buildFile,
         ScriptSource buildScriptSource,
-        GradleInternal gradle,
         ProjectState owner,
         ServiceRegistryFactory serviceRegistryFactory,
         ClassLoaderScope selfClassLoaderScope,
@@ -250,15 +236,9 @@ public abstract class DefaultProject extends AbstractPluginAware implements Proj
         this.owner = owner;
         this.classLoaderScope = selfClassLoaderScope;
         this.baseClassLoaderScope = baseClassLoaderScope;
-        // TODO:isolated mutable model of the current project should NOT keep a direct link to the mutable model of root and parent projects
-        this.rootProject = parent != null ? owner.getOwner().getRootProject().getMutableModel() : this;
-        this.projectDir = projectDir;
         this.buildFile = buildFile;
-        this.parent = parent;
-        this.name = name;
         this.state = new ProjectStateInternal();
         this.buildScriptSource = buildScriptSource;
-        this.gradle = gradle;
 
         services = serviceRegistryFactory.createFor(this);
         taskContainer = services.get(TaskContainerInternal.class);
@@ -280,7 +260,7 @@ public abstract class DefaultProject extends AbstractPluginAware implements Proj
 
         ProjectFeatureSupportInternal.attachLegacyDefinitionContext(this, services.get(ProjectFeatureApplicator.class), services.get(ProjectFeatureDeclarations.class), getObjects());
 
-        evaluationListener.add(gradle.getProjectEvaluationBroadcaster());
+        evaluationListener.add(getBuildState().getMutableModel().getProjectEvaluationBroadcaster());
 
         ruleBasedPluginListenerBroadcast.add((RuleBasedPluginListener) project -> populateModelRegistry(services.get(ModelRegistry.class)));
     }
@@ -354,6 +334,14 @@ public abstract class DefaultProject extends AbstractPluginAware implements Proj
         }
     }
 
+    private ProjectState getRootProjectState() {
+        return getBuildState().getProjects().getRootProject();
+    }
+
+    private BuildState getBuildState() {
+        return owner.getOwner();
+    }
+
     private ListenerBroadcast<ProjectEvaluationListener> newProjectEvaluationListenerBroadcast() {
         return new ListenerBroadcast<>(ProjectEvaluationListener.class);
     }
@@ -397,12 +385,12 @@ public abstract class DefaultProject extends AbstractPluginAware implements Proj
 
     @Override
     public ProjectInternal getRootProject(ProjectIdentity referrer) {
-        return getCrossProjectModelAccess().access(referrer, rootProject);
+        return getCrossProjectModelAccess().accessFromState(referrer, getRootProjectState());
     }
 
     @Override
     public GradleInternal getGradle() {
-        return getCrossProjectModelAccess().gradleInstanceForProject(getProjectIdentity(), gradle);
+        return getCrossProjectModelAccess().gradleInstanceForProject(getProjectIdentity(), getBuildState().getMutableModel());
     }
 
     @Inject
@@ -433,7 +421,7 @@ public abstract class DefaultProject extends AbstractPluginAware implements Proj
 
     @Override
     public File getRootDir() {
-        return owner.getOwner().getRootProject().getProjectDir();
+        return getRootProjectState().getProjectDir();
     }
 
     @Override
@@ -445,16 +433,11 @@ public abstract class DefaultProject extends AbstractPluginAware implements Proj
     @Nullable
     @Override
     public ProjectInternal getParent(ProjectIdentity referrer) {
+        ProjectState parent = owner.getParent();
         if (parent == null) {
             return null;
         }
-        return getCrossProjectModelAccess().access(referrer, parent);
-    }
-
-    @Nullable
-    @Override
-    public ProjectIdentifier getParentIdentifier() {
-        return parent;
+        return getCrossProjectModelAccess().accessFromState(referrer, parent);
     }
 
     @Override
@@ -469,7 +452,7 @@ public abstract class DefaultProject extends AbstractPluginAware implements Proj
 
     @Override
     public String getName() {
-        return name;
+        return owner.getName();
     }
 
     @Override
@@ -503,9 +486,8 @@ public abstract class DefaultProject extends AbstractPluginAware implements Proj
             return "";
         }
 
-        String rootProjectName = owner.getOwner().getRootProject().getName();
         return Stream.concat(
-            Stream.of(rootProjectName),
+            Stream.of(getRootProjectState().getName()),
             parent.getProjectIdentity().getProjectPath().segments().stream()
         ).collect(Collectors.joining("."));
     }
@@ -682,7 +664,7 @@ public abstract class DefaultProject extends AbstractPluginAware implements Proj
 
     @Override
     public Path getBuildPath() {
-        return gradle.getIdentityPath();
+        return getBuildState().getIdentityPath();
     }
 
     @Override
@@ -862,7 +844,7 @@ public abstract class DefaultProject extends AbstractPluginAware implements Proj
 
     @Override
     public File getProjectDir() {
-        return projectDir;
+        return owner.getProjectDir();
     }
 
     @Override
