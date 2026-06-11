@@ -382,6 +382,13 @@ $ ./gradlew build --watch-fs --project-cache-dir /custom/path
 
 See the [Excluding files and directories](userguide/file_system_watching.html#sec:excluding_files_and_directories) section in the Gradle User Manual for more details.
 
+#### `GenerateMavenPom` now supports up-to-date checks
+
+The [`GenerateMavenPom`](javadoc/org/gradle/api/publish/maven/tasks/GenerateMavenPom.html) task was previously marked as untracked, so it executed on every build regardless of whether the underlying POM had changed.
+
+The task now declares its source POM as proper task inputs and now participates in up-to-date checks.
+When a `withXml` action is registered, task input tracking remains disabled, as `withXml` actions do not yet support snapshotting.
+
 <!-- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 ADD RELEASE FEATURES ABOVE
 ========================================================== -->
