@@ -15,6 +15,8 @@
  */
 package org.gradle.api.internal.project;
 
+import org.gradle.internal.scan.UsedByScanPlugin;
+
 import java.io.File;
 
 /**
@@ -22,6 +24,7 @@ import java.io.File;
  * <p>
  * Avoid this type if possible. Prefer {@link ProjectIdentity}.
  */
+@UsedByScanPlugin("ImportJUnitXmlReports")
 public interface ProjectIdentifier {
 
     String getPath();
