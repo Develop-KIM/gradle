@@ -251,6 +251,7 @@ The current implementation of Isolated Projects has a number of limitations that
 * Tooling model caching is local only: no sharing across checkouts or remote caching.
 * A `gradle.lifecycle.beforeProject` callback registered in `settings.gradle(.kts)` cannot directly apply a lazily-resolved plugin, such as a convention plugin from a build registered via `pluginManagement.includeBuild(...)` or a third-party plugin from a repository, because the callback alone does not trigger resolution of that plugin and the export of its classpath.
 See <<sec:applying_plugins_from_a_lifecycle_callback>> for working patterns.
+* Isolated Projects violations are reported as Configuration Cache problems
 
 [[sec:evaluating]]
 == Evaluating Isolated Projects for your build
