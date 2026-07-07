@@ -916,7 +916,7 @@ public abstract class AbstractTask implements TaskInternal, DynamicObjectAware {
 
     @Internal
     @Override
-    public TaskDependencyInternal getMustRunAfter() {
+    public TaskDependency getMustRunAfter() {
         taskExecutionAccessChecker.notifyTaskDependenciesAccess(this, "Task.mustRunAfter");
         return mustRunAfter;
     }
@@ -944,7 +944,7 @@ public abstract class AbstractTask implements TaskInternal, DynamicObjectAware {
 
     @Internal
     @Override
-    public TaskDependencyInternal getFinalizedBy() {
+    public TaskDependency getFinalizedBy() {
         taskExecutionAccessChecker.notifyTaskDependenciesAccess(this, "Task.finalizedBy");
         return finalizedBy;
     }
@@ -972,7 +972,7 @@ public abstract class AbstractTask implements TaskInternal, DynamicObjectAware {
 
     @Internal
     @Override
-    public TaskDependencyInternal getShouldRunAfter() {
+    public TaskDependency getShouldRunAfter() {
         taskExecutionAccessChecker.notifyTaskDependenciesAccess(this, "Task.shouldRunAfter");
         return shouldRunAfter;
     }
