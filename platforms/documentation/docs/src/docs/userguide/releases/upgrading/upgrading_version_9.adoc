@@ -78,7 +78,7 @@ Source-dependency check-outs, which live under the project cache directory but w
 
 See <<file_system_watching.adoc#sec:excluding_files_and_directories,Excluding files and directories>> for details.
 
-==== Upgrade to Kotlin 2.4.10-RC
+==== Upgrade to Kotlin 2.4.0
 
 The embedded Kotlin has been upgraded from 2.3.21 to link:https://github.com/JetBrains/kotlin/releases/tag/v2.4.0[Kotlin 2.4.0].
 
