@@ -71,7 +71,10 @@ class FlakinessDetectionPerformanceExecutionDataProvider extends PerformanceExec
             Collections.singletonList(execution),
             removeEmptyExecution(currentExecutions),
             history instanceof CrossBuildPerformanceTestHistory,
-            false
+            false,
+            // Flakiness detection already narrows history to this commit's executions above; keep the original
+            // build-id keying (empty set falls back to the result JSON's build IDs) so its behaviour is unchanged.
+            Collections.emptySet()
         );
     }
 

@@ -27,6 +27,7 @@ import org.gradle.performance.results.ResultsStore;
 import org.gradle.performance.results.ResultsStoreHelper;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
@@ -64,19 +65,22 @@ public class DefaultPerformanceExecutionDataProvider extends PerformanceExecutio
     }
 
     private PerformanceReportScenario queryAndSortExecutionData(List<PerformanceTestExecutionResult> teamCityExecutionsOfSameScenario) {
-        List<String> teamcityBuildIds = teamCityExecutionsOfSameScenario
-            .stream()
-            .map(PerformanceTestExecutionResult::getTeamCityBuildId)
-            .filter(StringUtils::isNotBlank)
-            .collect(toList());
-        PerformanceTestHistory history = resultsStore.getTestResults(teamCityExecutionsOfSameScenario.get(0).getPerformanceExperiment(), DEFAULT_RETRY_COUNT, PERFORMANCE_DATE_RETRIEVE_DAYS, ResultsStoreHelper.determineChannelPatterns(), teamcityBuildIds);
+        // Build IDs used to make sure this pipeline's own runs are pulled from the DB: the authoritative bucket build
+        // IDs when known, otherwise (e.g. local runs) the IDs recorded in the result JSONs. We deliberately fetch by
+        // the authoritative IDs rather than the JSON's, because the JSON's teamCityBuildId is baked into the cacheable
+        // bucket output and points at a previous build on a cache hit.
+        List<String> buildIdsToFetch = performanceTestBuildIds.isEmpty()
+            ? teamCityExecutionsOfSameScenario.stream().map(PerformanceTestExecutionResult::getTeamCityBuildId).filter(StringUtils::isNotBlank).collect(toList())
+            : new ArrayList<>(performanceTestBuildIds);
+        PerformanceTestHistory history = resultsStore.getTestResults(teamCityExecutionsOfSameScenario.get(0).getPerformanceExperiment(), DEFAULT_RETRY_COUNT, PERFORMANCE_DATE_RETRIEVE_DAYS, ResultsStoreHelper.determineChannelPatterns(), buildIdsToFetch);
 
         List<PerformanceReportScenarioHistoryExecution> historyExecutions = removeEmptyExecution(history.getExecutions());
         return new PerformanceReportScenario(
             teamCityExecutionsOfSameScenario,
             historyExecutions,
             history instanceof CrossBuildPerformanceTestHistory,
-            isCarriedOverFromCache(teamCityExecutionsOfSameScenario)
+            isCarriedOverFromCache(teamCityExecutionsOfSameScenario),
+            performanceTestBuildIds
         );
     }
 

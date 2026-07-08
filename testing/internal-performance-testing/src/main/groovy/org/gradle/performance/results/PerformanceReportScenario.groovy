@@ -44,7 +44,8 @@ class PerformanceReportScenario {
         List<PerformanceTestExecutionResult> teamCityExecutions,
         List<PerformanceReportScenarioHistoryExecution> historyExecutions,
         boolean crossBuild,
-        boolean fromCache
+        boolean fromCache,
+        Set<String> pipelineBuildIds
     ) {
         if (teamCityExecutions.empty) {
             throw new IllegalArgumentException("teamCity executions must not be empty!")
@@ -54,10 +55,15 @@ class PerformanceReportScenario {
         this.crossBuild = crossBuild
         this.fromCache = fromCache
 
-        Set<String> teamCityBuildIds = teamCityExecutions.collect { it.teamCityBuildId }.toSet()
-        this.currentExecutions = historyExecutions.findAll {
-            teamCityBuildIds.contains(it.teamCityBuildId)
-        }
+        // "Current" executions are the ones this pipeline actually produced, identified by matching the DB row's own
+        // teamCityBuildId against the authoritative bucket build IDs of this pipeline. The DB row's build ID is written
+        // by the run that measured it, so it is always accurate; a build-cache hit produces no DB row at all, so cached
+        // results simply never appear here. This is why we do NOT trust the (cacheable) result JSON's teamCityBuildId.
+        // When the authoritative set is unknown (e.g. local runs), fall back to the result JSON's build IDs.
+        Set<String> matchBuildIds = pipelineBuildIds.isEmpty()
+            ? teamCityExecutions.collect { it.teamCityBuildId }.toSet()
+            : pipelineBuildIds
+        this.currentExecutions = historyExecutions.findAll { matchBuildIds.contains(it.teamCityBuildId) }
         this.historyExecutions = historyExecutions
     }
 
@@ -90,7 +96,15 @@ class PerformanceReportScenario {
     }
 
     boolean isImproved() {
-        return !crossBuild && currentExecutions.every { it.confidentToSayBetter() }
+        return !crossBuild && !currentExecutions.empty && currentExecutions.every { it.confidentToSayBetter() }
+    }
+
+    /**
+     * Whether this pipeline's own measurements (from the DB, not the possibly-stale result JSON status) show a
+     * confident regression for this scenario. This is the signal used to fail the build.
+     */
+    boolean isRegressedByMeasurement() {
+        return !crossBuild && currentExecutions.any { it.confidentToSayWorse() }
     }
 
     boolean isBuildFailed() {

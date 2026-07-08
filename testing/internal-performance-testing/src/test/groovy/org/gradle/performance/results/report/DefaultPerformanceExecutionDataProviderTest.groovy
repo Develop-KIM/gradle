@@ -86,12 +86,40 @@ class DefaultPerformanceExecutionDataProviderTest extends ResultSpecification {
         'unknown (local)' | '114123152' | []                   | false  // no authoritative set -> never suppress
     }
 
+    def "current executions come from this pipeline's DB rows (by authoritative build id), not the result JSON's build id"() {
+        given:
+        // The result JSON references a stale build (as happens on a build-cache hit). The DB contains a fresh row from
+        // this pipeline's bucket (114134082) and the stale build's own row (114123152).
+        def teamCityExecution = new PerformanceTestExecutionResult(scenarioName: 'x', scenarioClass: 'C', testProject: 'p', status: 'FAILURE', teamCityBuildId: '114123152')
+        def pipelineRow = regressedExecution('114134082')
+        def staleRow = regressedExecution('114123152')
+
+        when:
+        def scenario = new PerformanceReportScenario([teamCityExecution], [pipelineRow, staleRow], false, false, pipelineBuildIds as Set)
+
+        then:
+        scenario.currentExecutions*.teamCityBuildId == expectedCurrentBuildIds
+        scenario.isRegressedByMeasurement() == expectedRegressed
+
+        where:
+        scenario2         | pipelineBuildIds | expectedCurrentBuildIds | expectedRegressed
+        'fresh regression'| ['114134082']    | ['114134082']           | true   // only this pipeline's row counts; stale excluded
+        'cache hit'       | ['999999']       | []                      | false  // no DB row from this pipeline -> not gated
+        'local fallback'  | []               | ['114123152']           | true   // no authoritative set -> fall back to JSON build id
+    }
+
+    private PerformanceReportScenarioHistoryExecution regressedExecution(String teamCityBuildId) {
+        // current markedly slower than baseline with high confidence -> confidentToSayWorse() == true
+        return new PerformanceReportScenarioHistoryExecution(new Date().getTime(), teamCityBuildId, 'commit', measuredOperationList([1, 1, 1, 1, 1]), measuredOperationList([2, 2, 2, 2, 2]))
+    }
+
     private PerformanceReportScenario createFailedData() {
         return new PerformanceReportScenario(
             [new PerformanceTestExecutionResult(scenarioName: 'failed', status: 'FAILURE')],
             [Mock(PerformanceReportScenarioHistoryExecution)],
             false,
-            false
+            false,
+            [] as Set
         )
     }
 
@@ -120,6 +148,6 @@ class DefaultPerformanceExecutionDataProviderTest extends ResultSpecification {
         MeasuredOperationList currentVersion = measuredOperationList(currentVersionResult)
         PerformanceReportScenarioHistoryExecution historyExecution = new PerformanceReportScenarioHistoryExecution(new Date().getTime(), 'teamCityBuild', '', baseVersion, currentVersion)
         PerformanceTestExecutionResult teamCityExecution = new PerformanceTestExecutionResult(scenarioName: name, status: 'SUCCESS', teamCityBuildId: 'teamCityBuild')
-        return new PerformanceReportScenario([teamCityExecution], [historyExecution], false, false)
+        return new PerformanceReportScenario([teamCityExecution], [historyExecution], false, false, [] as Set)
     }
 }
