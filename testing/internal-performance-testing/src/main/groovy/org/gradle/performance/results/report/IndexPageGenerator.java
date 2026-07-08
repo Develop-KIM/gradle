@@ -19,7 +19,6 @@ package org.gradle.performance.results.report;
 import org.gradle.performance.results.PerformanceExperiment;
 import org.gradle.performance.results.PerformanceFlakinessDataProvider;
 import org.gradle.performance.results.PerformanceReportScenario;
-import org.gradle.performance.results.PerformanceTestExecutionResult;
 import org.gradle.performance.results.ResultsStore;
 import org.gradle.performance.results.ResultsStoreHelper;
 
@@ -30,8 +29,7 @@ import java.util.List;
 import java.util.Set;
 
 import static java.util.stream.Collectors.toList;
-import static org.gradle.performance.results.report.Tag.FixedTag.FAILED;
-import static org.gradle.performance.results.report.Tag.FixedTag.FROM_CACHE;
+import static org.gradle.performance.results.report.AbstractReportGenerator.getDependencyPerformanceTestTeamCityBuildIds;
 import static org.gradle.performance.results.report.Tag.FixedTag.IMPROVED;
 import static org.gradle.performance.results.report.Tag.FixedTag.NEARLY_FAILED;
 import static org.gradle.performance.results.report.Tag.FixedTag.REGRESSED;
@@ -101,20 +99,13 @@ public class IndexPageGenerator extends AbstractTablePageGenerator {
             @Override
             protected Set<Tag> determineTags(PerformanceReportScenario scenario) {
                 Set<Tag> result = new HashSet<>();
-                if (scenario.isFromCache()) {
-                    result.add(FROM_CACHE);
-                }
 
                 markFlakyTestInfo(scenario, result);
 
                 if (scenario.isUnknown()) {
                     result.add(UNKNOWN);
-                } else if (scenario.isBuildFailed()) {
-                    result.add(FAILED);
                 } else if (scenario.isRegressed()) {
                     result.add(failsBuild(scenario) ? REGRESSED : NEARLY_FAILED);
-                } else if (scenario.isAboutToRegress()) {
-                    result.add(NEARLY_FAILED);
                 } else if (scenario.isImproved()) {
                     result.add(IMPROVED);
                 }
@@ -137,7 +128,9 @@ public class IndexPageGenerator extends AbstractTablePageGenerator {
 
             @Override
             protected void renderScenarioButtons(int index, PerformanceReportScenario scenario) {
-                List<String> webUrls = scenario.getTeamCityExecutions().stream().map(PerformanceTestExecutionResult::getWebUrl).collect(toList());
+                // The result JSONs no longer carry per-scenario build URLs; link to this pipeline's bucket builds,
+                // derived from the org.gradle.performance.dependencyBuildIds system property.
+                List<String> webUrls = getDependencyPerformanceTestTeamCityBuildIds().stream().map(AbstractTablePageGenerator::getTeamCityWebUrlFromBuildId).collect(toList());
                 if (webUrls.size() == 1) {
                     a().target("_blank").classAttr("btn btn-primary btn-sm").href(webUrls.get(0)).text("Build").end();
                 } else {

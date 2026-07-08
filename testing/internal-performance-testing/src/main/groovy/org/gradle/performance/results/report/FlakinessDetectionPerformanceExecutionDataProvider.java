@@ -19,6 +19,7 @@ package org.gradle.performance.results.report;
 import com.google.common.collect.ImmutableList;
 import org.gradle.performance.results.CrossBuildPerformanceTestHistory;
 import org.gradle.performance.results.PerformanceReportScenario;
+import org.gradle.performance.results.PerformanceReportScenarioHistoryExecution;
 import org.gradle.performance.results.PerformanceTestExecutionResult;
 import org.gradle.performance.results.PerformanceTestExecution;
 import org.gradle.performance.results.PerformanceTestHistory;
@@ -34,15 +35,13 @@ import java.util.TreeSet;
 
 import static java.util.Comparator.comparing;
 import static java.util.stream.Collectors.toList;
+import static java.util.stream.Collectors.toSet;
 import static org.gradle.performance.results.PerformanceTestExecutionResult.FLAKINESS_DETECTION_THRESHOLD;
 
 class FlakinessDetectionPerformanceExecutionDataProvider extends PerformanceExecutionDataProvider {
     public static final int MOST_RECENT_EXECUTIONS = 9;
     private static final Comparator<PerformanceReportScenario> SCENARIO_COMPARATOR =
-        comparing(PerformanceReportScenario::isBuildFailed).reversed()
-            .thenComparing(PerformanceReportScenario::isSuccessful)
-            .thenComparing(comparing(PerformanceReportScenario::isBuildFailed).reversed())
-            .thenComparing(comparing(org.gradle.performance.results.report.FlakinessDetectionPerformanceExecutionDataProvider::isFlaky).reversed())
+        comparing(org.gradle.performance.results.report.FlakinessDetectionPerformanceExecutionDataProvider::isFlaky).reversed()
             .thenComparing(comparing(PerformanceReportScenario::getDifferencePercentage).reversed())
             .thenComparing(PerformanceReportScenario::getName);
 
@@ -67,14 +66,16 @@ class FlakinessDetectionPerformanceExecutionDataProvider extends PerformanceExec
         List<? extends PerformanceTestExecution> currentExecutions = executionsOfSameCommit.isEmpty()
             ? history.getExecutions().stream().limit(3).collect(toList())
             : executionsOfSameCommit;
+        // Flakiness detection has already selected the executions it considers "current" above. Treat exactly those as
+        // current by keying on their own build IDs, so behaviour is unchanged by the report's DB-based verdict model.
+        List<PerformanceReportScenarioHistoryExecution> currentHistory = removeEmptyExecution(currentExecutions);
+        Set<String> currentBuildIds = currentHistory.stream().map(PerformanceReportScenarioHistoryExecution::getTeamCityBuildId).collect(toSet());
         return new PerformanceReportScenario(
             Collections.singletonList(execution),
-            removeEmptyExecution(currentExecutions),
+            currentHistory,
             history instanceof CrossBuildPerformanceTestHistory,
-            false,
-            // Flakiness detection already narrows history to this commit's executions above; keep the original
-            // build-id keying (empty set falls back to the result JSON's build IDs) so its behaviour is unchanged.
-            Collections.emptySet()
+            currentBuildIds,
+            commitId
         );
     }
 

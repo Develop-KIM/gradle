@@ -17,7 +17,6 @@
 package org.gradle.performance.results.report;
 
 import com.google.common.annotations.VisibleForTesting;
-import org.apache.commons.lang3.StringUtils;
 import org.gradle.performance.results.CrossBuildPerformanceTestHistory;
 import org.gradle.performance.results.PerformanceReportScenario;
 import org.gradle.performance.results.PerformanceReportScenarioHistoryExecution;
@@ -35,16 +34,12 @@ import java.util.TreeSet;
 
 import static java.util.Comparator.comparing;
 import static java.util.stream.Collectors.groupingBy;
-import static java.util.stream.Collectors.toList;
 
 public class DefaultPerformanceExecutionDataProvider extends PerformanceExecutionDataProvider {
     private static final int DEFAULT_RETRY_COUNT = 3;
     @VisibleForTesting
-    static final Comparator<PerformanceReportScenario> SCENARIO_COMPARATOR = comparing(PerformanceReportScenario::isBuildFailed).reversed()
-        .thenComparing(comparing(PerformanceReportScenario::isFlaky).reversed())
-        .thenComparing(PerformanceReportScenario::isSuccessful)
-        .thenComparing(comparing(PerformanceReportScenario::isBuildFailed).reversed())
-        .thenComparing(comparing(PerformanceReportScenario::isAboutToRegress).reversed())
+    static final Comparator<PerformanceReportScenario> SCENARIO_COMPARATOR = comparing(PerformanceReportScenario::isRegressed).reversed()
+        .thenComparing(PerformanceReportScenario::isUnknown)
         .thenComparing(comparing(PerformanceReportScenario::getDifferenceSortKey).reversed())
         .thenComparing(comparing(PerformanceReportScenario::getDifferencePercentage).reversed())
         .thenComparing(PerformanceReportScenario::getName);
@@ -65,13 +60,11 @@ public class DefaultPerformanceExecutionDataProvider extends PerformanceExecutio
     }
 
     private PerformanceReportScenario queryAndSortExecutionData(List<PerformanceTestExecutionResult> teamCityExecutionsOfSameScenario) {
-        // Build IDs used to make sure this pipeline's own runs are pulled from the DB: the authoritative bucket build
-        // IDs when known, otherwise (e.g. local runs) the IDs recorded in the result JSONs. We deliberately fetch by
-        // the authoritative IDs rather than the JSON's, because the JSON's teamCityBuildId is baked into the cacheable
-        // bucket output and points at a previous build on a cache hit.
-        List<String> buildIdsToFetch = performanceTestBuildIds.isEmpty()
-            ? teamCityExecutionsOfSameScenario.stream().map(PerformanceTestExecutionResult::getTeamCityBuildId).filter(StringUtils::isNotBlank).collect(toList())
-            : new ArrayList<>(performanceTestBuildIds);
+        // Fetch this pipeline's own runs from the DB using the authoritative bucket build IDs when known. On a
+        // build-cache hit no DB row was written, so nothing spurious is pulled in. When the set is unknown (local runs)
+        // we fetch recent history for the experiment and PerformanceReportScenario identifies current executions by the
+        // commit under test instead.
+        List<String> buildIdsToFetch = new ArrayList<>(performanceTestBuildIds);
         PerformanceTestHistory history = resultsStore.getTestResults(teamCityExecutionsOfSameScenario.get(0).getPerformanceExperiment(), DEFAULT_RETRY_COUNT, PERFORMANCE_DATE_RETRIEVE_DAYS, ResultsStoreHelper.determineChannelPatterns(), buildIdsToFetch);
 
         List<PerformanceReportScenarioHistoryExecution> historyExecutions = removeEmptyExecution(history.getExecutions());
@@ -79,23 +72,8 @@ public class DefaultPerformanceExecutionDataProvider extends PerformanceExecutio
             teamCityExecutionsOfSameScenario,
             historyExecutions,
             history instanceof CrossBuildPerformanceTestHistory,
-            isCarriedOverFromCache(teamCityExecutionsOfSameScenario),
-            performanceTestBuildIds
+            performanceTestBuildIds,
+            commitId
         );
-    }
-
-    /**
-     * Whether this scenario's results were carried over from the Gradle build cache rather than produced by this
-     * pipeline. The upstream {@code PerformanceTest} task is cacheable and bakes the producing build's
-     * {@code teamCityBuildId} into its output, so on a cache hit the result JSON references a build from a previous
-     * pipeline. We detect that by checking the scenario's executions against {@code performanceTestBuildIds} - the
-     * authoritative set of build IDs this pipeline actually triggered. When that set is unknown (e.g. local runs,
-     * where the property is unset) we cannot tell, so we conservatively treat nothing as cached.
-     */
-    private boolean isCarriedOverFromCache(List<PerformanceTestExecutionResult> teamCityExecutionsOfSameScenario) {
-        return !performanceTestBuildIds.isEmpty()
-            && teamCityExecutionsOfSameScenario.stream()
-                .map(PerformanceTestExecutionResult::getTeamCityBuildId)
-                .noneMatch(performanceTestBuildIds::contains);
     }
 }

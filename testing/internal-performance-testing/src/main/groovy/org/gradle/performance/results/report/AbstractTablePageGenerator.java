@@ -22,7 +22,6 @@ import org.gradle.performance.results.FormatSupport;
 import org.gradle.performance.results.PerformanceFlakinessDataProvider;
 import org.gradle.performance.results.PerformanceReportScenario;
 import org.gradle.performance.results.PerformanceReportScenarioHistoryExecution;
-import org.gradle.performance.results.PerformanceTestExecutionResult;
 import org.gradle.performance.results.PerformanceTestHistory;
 import org.gradle.performance.results.ResultsStore;
 
@@ -189,7 +188,7 @@ public abstract class AbstractTablePageGenerator extends HtmlPageGenerator<Resul
                                 a().classAttr("btn btn-primary btn-sm collapsed").href("#").attr("data-toggle", "collapse", "data-target", "#collapse" + index).text("Detail").end();
                             end();
                             div().classAttr("col-2 p-0");
-                                if(scenario.isBuildFailed()) {
+                                if(scenario.isUnknown()) {
                                     text("N/A");
                                 } else {
                                     scenario.getCurrentExecutions().forEach(execution -> {
@@ -205,8 +204,8 @@ public abstract class AbstractTablePageGenerator extends HtmlPageGenerator<Resul
 
                     div().id("collapse" + index).classAttr("collapse");
                         div().classAttr("card-body");
-                            if(scenario.isBuildFailed()) {
-                                pre().text(scenario.getTeamCityExecutions().stream().map(PerformanceTestExecutionResult::getTestFailure).collect(joining("\n"))).end();
+                            if(scenario.isUnknown()) {
+                                pre().text("No measurement was produced for this scenario by this pipeline (e.g. the bucket result was served from the build cache, or the scenario did not run).").end();
                             } else {
                                 renderDetailsTable(scenario);
                             }

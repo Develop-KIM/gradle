@@ -16,138 +16,72 @@
 
 package org.gradle.performance.results.report
 
-import groovy.json.JsonOutput
 import org.gradle.performance.ResultSpecification
-import org.gradle.performance.results.MeasuredOperationList
 import org.gradle.performance.results.PerformanceReportScenario
 import org.gradle.performance.results.PerformanceReportScenarioHistoryExecution
-import org.gradle.performance.results.PerformanceTestHistory
-import org.gradle.performance.results.ResultsStore
 import org.gradle.performance.results.PerformanceTestExecutionResult
-import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
-import org.junit.Rule
-import spock.lang.Subject
 
 class DefaultPerformanceExecutionDataProviderTest extends ResultSpecification {
-    @Rule
-    TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider(getClass())
 
-    @Subject
-    DefaultPerformanceExecutionDataProvider provider
+    private static final String COMMIT = 'commit-under-test'
 
-    File resultsJson = tmpDir.file('results.json')
-    ResultsStore mockStore = Mock(ResultsStore)
-
-    def setup() {
-        resultsJson << '[]'
-        provider = new DefaultPerformanceExecutionDataProvider(mockStore, [resultsJson], [] as Set)
-    }
-
-    def 'can sort scenarios correctly'() {
+    def 'sorts regressed scenarios first and scenarios without a current-pipeline measurement last'() {
         when:
-        List buildResults = [
-            createLowConfidenceRegressedData(),
-            createLowConfidenceImprovedData(),
-            createHighConfidenceImprovedData(),
-            createHighConfidenceRegressedData(),
-            createFailedData()
+        List<PerformanceReportScenario> scenarios = [
+            improved('b-improved'),
+            unknownScenario('c-unknown'),
+            regressed('a-regressed')
         ]
-        buildResults.sort(DefaultPerformanceExecutionDataProvider.SCENARIO_COMPARATOR)
+        scenarios.sort(DefaultPerformanceExecutionDataProvider.SCENARIO_COMPARATOR)
 
         then:
-        buildResults.collect { it.scenarioName } == ['failed', 'highConfidenceRegressed', 'lowConfidenceRegressed', 'lowConfidenceImproved', 'highConfidenceImproved']
+        scenarios*.scenarioName == ['a-regressed', 'b-improved', 'c-unknown']
     }
 
-    def 'marks a scenario as carried over from cache when none of its executions ran in the current pipeline'() {
+    def 'identifies this pipeline\'s executions by build id (CI) or commit (local) and derives the verdict from them'() {
         given:
-        def store = Mock(ResultsStore) {
-            getTestResults(_, _, _, _ as List, _) >> Stub(PerformanceTestHistory) {
-                getExecutions() >> []
-            }
-        }
-        resultsJson.text = JsonOutput.toJson([[
-            teamCityBuildId: jsonBuildId,
-            scenarioName   : 'assemble',
-            scenarioClass  : 'org.example.SomeTest',
-            testProject    : 'largeMonolithicJavaProject',
-            status         : 'FAILURE',
-            webUrl         : "https://builds.gradle.org/viewLog.html?buildId=$jsonBuildId"
-        ]])
-        provider = new DefaultPerformanceExecutionDataProvider(store, [resultsJson], currentPipelineBuildIds as Set)
-
-        expect:
-        provider.reportScenarios.first().fromCache == expectedFromCache
-
-        where:
-        // A cache hit restores the bucket task output, whose JSON carries the *original* producing build's id.
-        scenario       | jsonBuildId | currentPipelineBuildIds | expectedFromCache
-        'cache hit'    | '114123152' | ['114134082']           | true   // stale build id, not one of this pipeline's buckets
-        'fresh run'    | '114134082' | ['114134082']           | false  // produced by this pipeline
-        'unknown (local)' | '114123152' | []                   | false  // no authoritative set -> never suppress
-    }
-
-    def "current executions come from this pipeline's DB rows (by authoritative build id), not the result JSON's build id"() {
-        given:
-        // The result JSON references a stale build (as happens on a build-cache hit). The DB contains a fresh row from
-        // this pipeline's bucket (114134082) and the stale build's own row (114123152).
-        def teamCityExecution = new PerformanceTestExecutionResult(scenarioName: 'x', scenarioClass: 'C', testProject: 'p', status: 'FAILURE', teamCityBuildId: '114123152')
-        def pipelineRow = regressedExecution('114134082')
-        def staleRow = regressedExecution('114123152')
+        // The result JSON no longer carries a build id or status - it is only the scenario identity.
+        def teamCityExecution = new PerformanceTestExecutionResult(scenarioName: 'x', scenarioClass: 'org.example.C', testProject: 'p')
+        // The DB has a regressed row produced by this pipeline's bucket, plus a row from an unrelated build/commit.
+        def pipelineRow = regressedExecution('114134082', COMMIT)
+        def foreignRow = regressedExecution('114123152', 'other-commit')
 
         when:
-        def scenario = new PerformanceReportScenario([teamCityExecution], [pipelineRow, staleRow], false, false, pipelineBuildIds as Set)
+        def scenario = new PerformanceReportScenario([teamCityExecution], [pipelineRow, foreignRow], false, pipelineBuildIds as Set, currentCommit)
 
         then:
         scenario.currentExecutions*.teamCityBuildId == expectedCurrentBuildIds
-        scenario.isRegressedByMeasurement() == expectedRegressed
+        scenario.regressed == expectedRegressed
+        scenario.unknown == expectedUnknown
 
         where:
-        scenario2         | pipelineBuildIds | expectedCurrentBuildIds | expectedRegressed
-        'fresh regression'| ['114134082']    | ['114134082']           | true   // only this pipeline's row counts; stale excluded
-        'cache hit'       | ['999999']       | []                      | false  // no DB row from this pipeline -> not gated
-        'local fallback'  | []               | ['114123152']           | true   // no authoritative set -> fall back to JSON build id
+        desc                | pipelineBuildIds | currentCommit  | expectedCurrentBuildIds | expectedRegressed | expectedUnknown
+        'CI, fresh run'     | ['114134082']    | 'ignored'      | ['114134082']           | true              | false
+        'CI, build-cache hit' | ['999999']     | 'ignored'      | []                      | false             | true
+        'local, by commit'  | []               | COMMIT         | ['114134082']           | true              | false
     }
 
-    private PerformanceReportScenarioHistoryExecution regressedExecution(String teamCityBuildId) {
+    private PerformanceReportScenario regressed(String name) {
+        return scenario(name, [1, 1, 1], [2, 2, 2])
+    }
+
+    private PerformanceReportScenario improved(String name) {
+        return scenario(name, [2, 2, 2], [1, 1, 1])
+    }
+
+    private PerformanceReportScenario scenario(String name, List<Integer> baseVersion, List<Integer> currentVersion) {
+        def execution = new PerformanceTestExecutionResult(scenarioName: name, scenarioClass: 'org.example.C', testProject: 'p')
+        def history = new PerformanceReportScenarioHistoryExecution(new Date().getTime(), 'build-1', COMMIT, measuredOperationList(baseVersion), measuredOperationList(currentVersion))
+        return new PerformanceReportScenario([execution], [history], false, ['build-1'] as Set, COMMIT)
+    }
+
+    private PerformanceReportScenario unknownScenario(String name) {
+        def execution = new PerformanceTestExecutionResult(scenarioName: name, scenarioClass: 'org.example.C', testProject: 'p')
+        return new PerformanceReportScenario([execution], [], false, ['build-1'] as Set, COMMIT)
+    }
+
+    private PerformanceReportScenarioHistoryExecution regressedExecution(String teamCityBuildId, String commitId) {
         // current markedly slower than baseline with high confidence -> confidentToSayWorse() == true
-        return new PerformanceReportScenarioHistoryExecution(new Date().getTime(), teamCityBuildId, 'commit', measuredOperationList([1, 1, 1, 1, 1]), measuredOperationList([2, 2, 2, 2, 2]))
-    }
-
-    private PerformanceReportScenario createFailedData() {
-        return new PerformanceReportScenario(
-            [new PerformanceTestExecutionResult(scenarioName: 'failed', status: 'FAILURE')],
-            [Mock(PerformanceReportScenarioHistoryExecution)],
-            false,
-            false,
-            [] as Set
-        )
-    }
-
-    private PerformanceReportScenario createHighConfidenceImprovedData() {
-        // 95% confidence -50% difference
-        return createResult('highConfidenceImproved', [2, 2, 2], [1, 1, 1])
-    }
-
-    private PerformanceReportScenario createLowConfidenceImprovedData() {
-        // 68% confidence -50% difference
-        return createResult('lowConfidenceImproved', [2], [1])
-    }
-
-    private PerformanceReportScenario createLowConfidenceRegressedData() {
-        // 68% confidence 100% difference
-        return createResult("lowConfidenceRegressed", [1], [2])
-    }
-
-    private PerformanceReportScenario createHighConfidenceRegressedData() {
-        // 91% confidence 100% difference
-        return createResult('highConfidenceRegressed', [1, 1, 1, 2], [2, 2, 2, 2])
-    }
-
-    private PerformanceReportScenario createResult(String name, List<Integer> baseVersionResult, List<Integer> currentVersionResult) {
-        MeasuredOperationList baseVersion = measuredOperationList(baseVersionResult)
-        MeasuredOperationList currentVersion = measuredOperationList(currentVersionResult)
-        PerformanceReportScenarioHistoryExecution historyExecution = new PerformanceReportScenarioHistoryExecution(new Date().getTime(), 'teamCityBuild', '', baseVersion, currentVersion)
-        PerformanceTestExecutionResult teamCityExecution = new PerformanceTestExecutionResult(scenarioName: name, status: 'SUCCESS', teamCityBuildId: 'teamCityBuild')
-        return new PerformanceReportScenario([teamCityExecution], [historyExecution], false, false, [] as Set)
+        return new PerformanceReportScenarioHistoryExecution(new Date().getTime(), teamCityBuildId, commitId, measuredOperationList([1, 1, 1]), measuredOperationList([2, 2, 2]))
     }
 }
