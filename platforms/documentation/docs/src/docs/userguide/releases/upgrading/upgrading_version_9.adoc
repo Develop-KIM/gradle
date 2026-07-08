@@ -232,7 +232,7 @@ The special case will be removed in Gradle 10, at which point an `IllegalAttribu
 To fix builds affected by this deprecation, upgrade the Kotlin Gradle Plugin to 2.2.0 or later.
 Newer KGP versions do not use a plain enum for this attribute and are unaffected.
 
-See the <<variant_attributes.adoc#sec:standard_attributes, variant attributes documentation>> for the full set of supported attribute value types.
+See the <<variant_attributes.adoc#sec:creating-attributes, variant attributes documentation>> for the full set of supported attribute value types.
 
 [[changes_9.6.0]]
 == Upgrading from 9.5.0 and earlier
