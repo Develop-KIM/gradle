@@ -21,17 +21,20 @@ import groovy.transform.MapConstructor
 
 // Modify this class with care, see class org.gradle.performance.results.PerformanceTestExecutionResult
 //
-// This is the output of the (cacheable) PerformanceTest task, so it must contain only data that is a pure function of
-// the task inputs: the identity of the scenarios that were exercised. The producing build's teamCityBuildId, the web
-// URL derived from it, and the pass/fail status/testFailure are deliberately NOT stored here - they are build-specific
-// and would be replayed stale onto an unrelated build on a build-cache hit. The report derives the TeamCity build from
-// the `org.gradle.performance.dependencyBuildIds` system property and the verdict from the performance database.
+// This is the output of the (cacheable) PerformanceTest task. The producing build's teamCityBuildId and the web URL
+// derived from it are deliberately NOT stored here - they are build-specific and would be replayed stale onto an
+// unrelated build on a build-cache hit. The report derives the TeamCity build from the
+// `org.gradle.performance.dependencyBuildIds` system property. The pass/fail status is still recorded: it is the
+// failure signal for cross-build scenarios, which have no version-comparison model to derive a verdict from.
 @MapConstructor
 @CompileStatic
 class ScenarioBuildResultData {
     String scenarioName
     String scenarioClass
     String testProject
+    String testFailure
+    // SUCCESS/FAILURE/UNKNOWN
+    String status
     String agentName
     String agentUrl
 }

@@ -30,6 +30,7 @@ import java.util.Set;
 
 import static java.util.stream.Collectors.toList;
 import static org.gradle.performance.results.report.AbstractReportGenerator.getDependencyPerformanceTestTeamCityBuildIds;
+import static org.gradle.performance.results.report.Tag.FixedTag.FAILED;
 import static org.gradle.performance.results.report.Tag.FixedTag.IMPROVED;
 import static org.gradle.performance.results.report.Tag.FixedTag.NEARLY_FAILED;
 import static org.gradle.performance.results.report.Tag.FixedTag.REGRESSED;
@@ -104,8 +105,12 @@ public class IndexPageGenerator extends AbstractTablePageGenerator {
 
                 if (scenario.isUnknown()) {
                     result.add(UNKNOWN);
+                } else if (scenario.isBuildFailed()) {
+                    result.add(FAILED);
                 } else if (scenario.isRegressed()) {
                     result.add(failsBuild(scenario) ? REGRESSED : NEARLY_FAILED);
+                } else if (scenario.isAboutToRegress()) {
+                    result.add(NEARLY_FAILED);
                 } else if (scenario.isImproved()) {
                     result.add(IMPROVED);
                 }

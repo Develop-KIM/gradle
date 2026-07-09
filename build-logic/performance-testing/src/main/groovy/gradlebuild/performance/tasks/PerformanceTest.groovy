@@ -20,6 +20,7 @@ import com.google.common.collect.Sets
 import gradlebuild.integrationtests.tasks.DistributionTest
 import gradlebuild.performance.PerformanceTestService
 import gradlebuild.performance.ScenarioBuildResultData
+import gradlebuild.performance.junit4.JUnit4Failure
 import gradlebuild.performance.junit4.JUnit4Testcase
 import gradlebuild.performance.junit4.JUnit4Testsuite
 import gradlebuild.performance.junit4.SecureUnmarshaller
@@ -292,18 +293,23 @@ abstract class PerformanceTest extends DistributionTest {
         return resultData
     }
 
+    static String collectFailures(JUnit4Testcase testCase) {
+        List<JUnit4Failure> failures = testCase.failure ?: []
+        return failures.collect { it.content }.join("\n")
+    }
+
     private List<ScenarioBuildResultData> extractResultFromTestSuite(JUnit4Testsuite testSuite, String testProject) {
         def agentName = System.getenv("BUILD_AGENT_NAME") ?: null
 
         List<JUnit4Testcase> testCases = testSuite.testcase ?: []
-        // Only record the identity of the scenarios that were exercised. The pass/fail verdict is recomputed by the
-        // aggregate report from the performance database, not carried in this (cacheable) output - see ScenarioBuildResultData.
         return testCases.findAll { !it.skipped }.collect {
             new ScenarioBuildResultData(
                 scenarioName: it.name,
                 scenarioClass: it.classname,
                 testProject: testProject,
-                agentName: agentName
+                agentName: agentName,
+                status: (it.error || it.failure) ? "FAILURE" : "SUCCESS",
+                testFailure: collectFailures(it)
             )
         }
     }

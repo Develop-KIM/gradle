@@ -55,8 +55,8 @@ public class DefaultReportGenerator extends AbstractReportGenerator<AllResultsSt
                 // The bucket task is cacheable and bakes its status + teamCityBuildId into the output, so on a build-cache
                 // hit the JSON replays a previous build's verdict. A scenario whose measurements were not produced by
                 // this pipeline (e.g. served from the build cache, or not run) has no current executions here, so
-                // isRegressed() is false and it is simply not gated.
-                if (!scenario.isRegressed()) {
+                // isRegressedByMeasurement() is false and it is simply not gated.
+                if (!scenario.isRegressedByMeasurement()) {
                     return;
                 }
                 Set<PerformanceFlakinessDataProvider.ScenarioRegressionResult> regressionResults = scenario.getCurrentExecutions().stream()

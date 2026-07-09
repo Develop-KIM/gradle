@@ -25,23 +25,10 @@ class DefaultPerformanceExecutionDataProviderTest extends ResultSpecification {
 
     private static final String COMMIT = 'commit-under-test'
 
-    def 'sorts regressed scenarios first and scenarios without a current-pipeline measurement last'() {
-        when:
-        List<PerformanceReportScenario> scenarios = [
-            improved('b-improved'),
-            unknownScenario('c-unknown'),
-            regressed('a-regressed')
-        ]
-        scenarios.sort(DefaultPerformanceExecutionDataProvider.SCENARIO_COMPARATOR)
-
-        then:
-        scenarios*.scenarioName == ['a-regressed', 'b-improved', 'c-unknown']
-    }
-
-    def 'identifies this pipeline\'s executions by build id (CI) or commit (local) and derives the verdict from them'() {
+    def 'identifies this pipeline\'s executions by build id (CI) or commit (local) and derives the measured verdict from them'() {
         given:
-        // The result JSON no longer carries a build id or status - it is only the scenario identity.
-        def teamCityExecution = new PerformanceTestExecutionResult(scenarioName: 'x', scenarioClass: 'org.example.C', testProject: 'p')
+        // The result JSON no longer carries a build id - only the scenario identity (+ status, used by cross-build).
+        def teamCityExecution = new PerformanceTestExecutionResult(scenarioName: 'x', scenarioClass: 'org.example.C', testProject: 'p', status: 'SUCCESS')
         // The DB has a regressed row produced by this pipeline's bucket, plus a row from an unrelated build/commit.
         def pipelineRow = regressedExecution('114134082', COMMIT)
         def foreignRow = regressedExecution('114123152', 'other-commit')
@@ -51,33 +38,31 @@ class DefaultPerformanceExecutionDataProviderTest extends ResultSpecification {
 
         then:
         scenario.currentExecutions*.teamCityBuildId == expectedCurrentBuildIds
-        scenario.regressed == expectedRegressed
-        scenario.unknown == expectedUnknown
+        scenario.regressedByMeasurement == expectedRegressed
 
         where:
-        desc                | pipelineBuildIds | currentCommit  | expectedCurrentBuildIds | expectedRegressed | expectedUnknown
-        'CI, fresh run'     | ['114134082']    | 'ignored'      | ['114134082']           | true              | false
-        'CI, build-cache hit' | ['999999']     | 'ignored'      | []                      | false             | true
-        'local, by commit'  | []               | COMMIT         | ['114134082']           | true              | false
+        desc                  | pipelineBuildIds | currentCommit | expectedCurrentBuildIds | expectedRegressed
+        'CI, fresh run'       | ['114134082']    | 'ignored'     | ['114134082']           | true
+        'CI, build-cache hit' | ['999999']       | 'ignored'     | []                      | false
+        'local, by commit'    | []               | COMMIT        | ['114134082']           | true
     }
 
-    private PerformanceReportScenario regressed(String name) {
-        return scenario(name, [1, 1, 1], [2, 2, 2])
-    }
+    def 'cross-version verdict comes from the DB, while cross-build still uses the recorded status'() {
+        given:
+        def failed = new PerformanceTestExecutionResult(scenarioName: 'x', scenarioClass: 'org.example.C', testProject: 'p', status: 'FAILURE')
+        def row = regressedExecution('build-1', COMMIT)
 
-    private PerformanceReportScenario improved(String name) {
-        return scenario(name, [2, 2, 2], [1, 1, 1])
-    }
+        when:
+        def scenario = new PerformanceReportScenario([failed], [row], crossBuild, ['build-1'] as Set, COMMIT)
 
-    private PerformanceReportScenario scenario(String name, List<Integer> baseVersion, List<Integer> currentVersion) {
-        def execution = new PerformanceTestExecutionResult(scenarioName: name, scenarioClass: 'org.example.C', testProject: 'p')
-        def history = new PerformanceReportScenarioHistoryExecution(new Date().getTime(), 'build-1', COMMIT, measuredOperationList(baseVersion), measuredOperationList(currentVersion))
-        return new PerformanceReportScenario([execution], [history], false, ['build-1'] as Set, COMMIT)
-    }
+        then:
+        scenario.regressed == statusBasedRegressed              // status-based signal (used by the cross-build report)
+        scenario.regressedByMeasurement == measurementRegressed // DB confidence (used by the cross-version report)
 
-    private PerformanceReportScenario unknownScenario(String name) {
-        def execution = new PerformanceTestExecutionResult(scenarioName: name, scenarioClass: 'org.example.C', testProject: 'p')
-        return new PerformanceReportScenario([execution], [], false, ['build-1'] as Set, COMMIT)
+        where:
+        crossBuild | statusBasedRegressed | measurementRegressed
+        false      | true                 | true   // cross-version: both agree here
+        true       | true                 | false  // cross-build: only the status-based signal fires (DB model is guarded off)
     }
 
     private PerformanceReportScenarioHistoryExecution regressedExecution(String teamCityBuildId, String commitId) {

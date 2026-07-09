@@ -25,13 +25,29 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 class PerformanceTestExecutionResult {
+    public static final String STATUS_SUCCESS = "SUCCESS"
+    public static final String STATUS_FAILURE = "FAILURE"
+    public static final String STATUS_UNKNOWN = "UNKNOWN"
     public static final int FLAKINESS_DETECTION_THRESHOLD = 99
-    // Only the scenario identity is carried in the (cacheable) bucket output. The producing build id, web URL and
-    // pass/fail status are intentionally absent - the report derives the TeamCity build from the
-    // `org.gradle.performance.dependencyBuildIds` system property and the verdict from the performance database.
+    // No teamCityBuildId/webUrl: the producing build id is not stored in the cacheable bucket output (it would be
+    // replayed stale on a build-cache hit). The report derives the TeamCity build from the dependencyBuildIds property.
     String scenarioName
     String scenarioClass
     String testProject
+    String testFailure
+    String status
+
+    boolean isBuildFailed() {
+        return status == STATUS_FAILURE
+    }
+
+    boolean isUnknown() {
+        return status == STATUS_UNKNOWN
+    }
+
+    boolean isSuccessful() {
+        return status == STATUS_SUCCESS
+    }
 
     PerformanceExperiment getPerformanceExperiment() {
         new PerformanceExperiment(getTestProject(), new PerformanceScenario(getScenarioClass(), getScenarioName()))

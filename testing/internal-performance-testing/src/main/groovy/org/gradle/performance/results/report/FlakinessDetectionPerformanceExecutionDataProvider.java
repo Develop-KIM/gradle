@@ -41,7 +41,10 @@ import static org.gradle.performance.results.PerformanceTestExecutionResult.FLAK
 class FlakinessDetectionPerformanceExecutionDataProvider extends PerformanceExecutionDataProvider {
     public static final int MOST_RECENT_EXECUTIONS = 9;
     private static final Comparator<PerformanceReportScenario> SCENARIO_COMPARATOR =
-        comparing(org.gradle.performance.results.report.FlakinessDetectionPerformanceExecutionDataProvider::isFlaky).reversed()
+        comparing(PerformanceReportScenario::isBuildFailed).reversed()
+            .thenComparing(PerformanceReportScenario::isSuccessful)
+            .thenComparing(comparing(PerformanceReportScenario::isBuildFailed).reversed())
+            .thenComparing(comparing(org.gradle.performance.results.report.FlakinessDetectionPerformanceExecutionDataProvider::isFlaky).reversed())
             .thenComparing(comparing(PerformanceReportScenario::getDifferencePercentage).reversed())
             .thenComparing(PerformanceReportScenario::getName);
 
@@ -66,8 +69,8 @@ class FlakinessDetectionPerformanceExecutionDataProvider extends PerformanceExec
         List<? extends PerformanceTestExecution> currentExecutions = executionsOfSameCommit.isEmpty()
             ? history.getExecutions().stream().limit(3).collect(toList())
             : executionsOfSameCommit;
-        // Flakiness detection has already selected the executions it considers "current" above. Treat exactly those as
-        // current by keying on their own build IDs, so behaviour is unchanged by the report's DB-based verdict model.
+        // Flakiness detection has already selected the executions it treats as "current" above; key the scenario on
+        // their own build IDs so exactly those count as current, keeping behaviour unchanged.
         List<PerformanceReportScenarioHistoryExecution> currentHistory = removeEmptyExecution(currentExecutions);
         Set<String> currentBuildIds = currentHistory.stream().map(PerformanceReportScenarioHistoryExecution::getTeamCityBuildId).collect(toSet());
         return new PerformanceReportScenario(
